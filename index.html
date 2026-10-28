@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Language Translation Tool</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: #eef2f7;
+    margin: 0;
+    padding: 20px;
+    display: flex;
+    justify-content: center;
+  }
+  .container {
+    width: 100%;
+    max-width: 760px;
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  }
+  h1 { margin: 0 0 20px; font-size: 24px; color: #1f2d3d; text-align: center; }
+  .lang-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .lang-row .field { flex: 1; min-width: 140px; }
+  label { display: block; font-size: 13px; font-weight: bold; color: #4a5568; margin-bottom: 6px; }
+  select, textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #cbd5e0;
+    border-radius: 8px;
+    font-size: 15px;
+    font-family: inherit;
+  }
+  textarea { min-height: 130px; resize: vertical; }
+  textarea[readonly] { background: #f7fafc; }
+  button {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    cursor: pointer;
+    background: #2b6cb0;
+    color: #fff;
+  }
+  button:hover:not(:disabled) { background: #2c5282; }
+  button:disabled { opacity: 0.6; cursor: not-allowed; }
+  button.secondary { background: #718096; }
+  button.secondary:hover:not(:disabled) { background: #4a5568; }
+  .swap { padding: 10px 14px; }
+  .count { font-size: 12px; color: #718096; text-align: right; margin: 4px 0 12px; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+  #translateBtn { width: 100%; margin: 6px 0 18px; font-weight: bold; }
+  #status { min-height: 20px; font-size: 14px; margin-bottom: 8px; }
+  #status.error { color: #c53030; }
+  #status.info { color: #2b6cb0; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🌐 Language Translation Tool</h1>
+
+  <div class="lang-row">
+    <div class="field">
+      <label for="sourceLang">From</label>
+      <select id="sourceLang"></select>
+    </div>
+    <button class="swap" id="swapBtn" title="Swap languages" aria-label="Swap languages">⇄</button>
+    <div class="field">
+      <label for="targetLang">To</label>
+      <select id="targetLang"></select>
+    </div>
+  </div>
+
+  <label for="inputText">Enter text</label>
+  <textarea id="inputText" maxlength="500" placeholder="Type or paste text here..."></textarea>
+  <div class="count"><span id="charCount">0</span> / 500</div>
+
+  <button id="translateBtn">Translate</button>
+  <div id="status" role="status"></div>
+
+  <label for="outputText">Translated text</label>
+  <textarea id="outputText" readonly placeholder="Translation will appear here..."></textarea>
+
+  <div class="actions">
+    <button class="secondary" id="copyBtn" disabled>📋 Copy</button>
+    <button class="secondary" id="speakBtn" disabled>🔊 Listen</button>
+  </div>
+</div>
+
+<script>
+  // Languages: [code, display name]
+  const LANGUAGES = [
+    ["en", "English"], ["hi", "Hindi"], ["bn", "Bengali"], ["ta", "Tamil"],
+    ["te", "Telugu"], ["mr", "Marathi"], ["gu", "Gujarati"], ["pa", "Punjabi"],
+    ["ur", "Urdu"], ["es", "Spanish"], ["fr", "French"], ["de", "German"],
+    ["it", "Italian"], ["pt", "Portuguese"], ["ru", "Russian"], ["ja", "Japanese"],
+    ["ko", "Korean"], ["zh-CN", "Chinese (Simplified)"], ["ar", "Arabic"], ["tr", "Turkish"]
+  ];
+
+  const sourceLang = document.getElementById("sourceLang");
+  const targetLang = document.getElementById("targetLang");
+  const inputText = document.getElementById("inputText");
+  const outputText = document.getElementById("outputText");
+  const translateBtn = document.getElementById("translateBtn");
+  const copyBtn = document.getElementById("copyBtn");
+  const speakBtn = document.getElementById("speakBtn");
+  const swapBtn = document.getElementById("swapBtn");
+  const statusEl = document.getElementById("status");
+  const charCount = document.getElementById("charCount");
+
+  // Fill the language dropdowns
+  function populate(select, selected) {
+    LANGUAGES.forEach(([code, name]) => {
+      const opt = document.createElement("option");
+      opt.value = code;
+      opt.textContent = name;
+      if (code === selected) opt.selected = true;
+      select.appendChild(opt);
+    });
+  }
+  populate(sourceLang, "en");
+  populate(targetLang, "hi");
+
+  function setStatus(message, type) {
+    statusEl.textContent = message || "";
+    statusEl.className = type || "";
+  }
+
+  // Translate using the free MyMemory Translation API (no API key needed)
+  async function translate() {
+    const text = inputText.value.trim();
+    if (!text) {
+      setStatus("Please enter some text to translate.", "error");
+      return;
+    }
+    if (sourceLang.value === targetLang.value) {
+      outputText.value = text;
+      updateOutputButtons();
+      setStatus("Source and target languages are the same.", "info");
+      return;
+    }
+
+    translateBtn.disabled = true;
+    setStatus("Translating...", "info");
+    outputText.value = "";
+    updateOutputButtons();
+
+    const url = "https://api.mymemory.translated.net/get?q=" +
+      encodeURIComponent(text) +
+      "&langpair=" + encodeURIComponent(sourceLang.value + "|" + targetLang.value);
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Network error (" + response.status + ")");
+      const data = await response.json();
+
+      if (Number(data.responseStatus) !== 200) {
+        throw new Error(data.responseDetails || "Translation failed.");
+      }
+      outputText.value = data.responseData.translatedText;
+      setStatus("Done ✔", "info");
+    } catch (err) {
+      setStatus("Error: " + err.message, "error");
+    } finally {
+      translateBtn.disabled = false;
+      updateOutputButtons();
+    }
+  }
+
+  function updateOutputButtons() {
+    const hasText = outputText.value.trim().length > 0;
+    copyBtn.disabled = !hasText;
+    speakBtn.disabled = !hasText;
+  }
+
+  // Optional: copy button
+  async function copyText() {
+    try {
+      await navigator.clipboard.writeText(outputText.value);
+    } catch (e) {
+      outputText.select();
+      document.execCommand("copy");
+    }
+    setStatus("Copied to clipboard!", "info");
+  }
+
+  // Optional: text-to-speech using the browser's built-in speech engine
+  function speakText() {
+    if (!("speechSynthesis" in window)) {
+      setStatus("Text-to-speech is not supported in this browser.", "error");
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(outputText.value);
+    utterance.lang = targetLang.value;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  // Swap source and target languages (and texts)
+  function swapLanguages() {
+    const tempLang = sourceLang.value;
+    sourceLang.value = targetLang.value;
+    targetLang.value = tempLang;
+    if (outputText.value.trim()) {
+      inputText.value = outputText.value;
+      outputText.value = "";
+      charCount.textContent = inputText.value.length;
+      updateOutputButtons();
+    }
+  }
+
+  // Events
+  translateBtn.addEventListener("click", translate);
+  copyBtn.addEventListener("click", copyText);
+  speakBtn.addEventListener("click", speakText);
+  swapBtn.addEventListener("click", swapLanguages);
+  inputText.addEventListener("input", () => {
+    charCount.textContent = inputText.value.length;
+  });
+  inputText.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) translate();
+  });
+</script>
+</body>
+</html>
